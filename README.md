@@ -146,7 +146,7 @@ PORT=5000
  
 ## 1️⃣ Clone Repository
  
-    git clone https://github.com/Shruthimr123/Smart-Recruitment-System.git
+    git clone https://github.com/SamChrstopher/smart-recruitment-system.git
     cd Smart-Recruitment-System
  
 ## 2️⃣ Start Backend (NestJS API)
