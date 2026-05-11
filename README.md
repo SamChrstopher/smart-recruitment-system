@@ -141,6 +141,131 @@ PORT=5000
 5. Update `.env` credentials accordingly.
  
 ---
+
+# 🐳 Docker Setup for Coding Platform
+
+The coding platform executes user code inside Docker containers.  
+So Docker Desktop must be installed and running before starting the project.
+
+## Step 1 — Install Docker Desktop
+
+Install Docker Desktop from:
+
+https://www.docker.com/products/docker-desktop/
+
+---
+
+## Step 2 — Start Docker Desktop
+
+Open Docker Desktop.
+
+Docker Engine will automatically start and run in the background.
+
+Make sure Docker is running before starting the coding platform.
+
+---
+
+## Step 3 — Pull Required Language Images
+
+Run the following commands in your terminal (Git Bash / PowerShell / CMD):
+
+| Language | Command |
+|---|---|
+| Python | `docker pull python:3.10` |
+| Java | `docker pull openjdk:17` |
+| JavaScript | `docker pull node:18` |
+| C# | `docker pull mono:latest` |
+| C++ | `docker pull gcc:13.2.0` |
+
+---
+
+## Step 4 — Docker Images Storage
+
+After downloading, Docker automatically stores these images locally.
+
+No additional configuration is required.
+
+---
+
+## Step 5 — Keep Docker Running
+
+Docker Desktop must remain running while taking coding assessments or executing code from the editor.
+
+---
+
+# ⚠️ Important Instruction — Update Local Docker Volume Paths
+
+The coding execution service uses local Docker volume mappings.
+
+You must update the local paths inside:
+
+```ts
+src/utils/language-config.ts
+```
+
+---
+
+## Step 1 — Locate the File
+
+Open:
+
+```ts
+src/utils/language-config.ts
+```
+
+---
+
+## Step 2 — Find `extraVolume` Entries
+
+Locate entries containing paths like:
+
+```ts
+C:/Users/Sam Christopher/....
+```
+
+---
+
+## Step 3 — Replace with Your Local System Paths
+
+Update the paths with your own local folder paths.
+
+### Instructions
+
+1. Right-click the `Wrappers` folder
+
+2. Click **Copy Path**
+
+3. Replace single backslashes `\` with double slashes `//`
+
+4. Repeat the same process for the `libs` folder
+
+5. Save the file
+
+---
+
+## Example
+
+```ts
+"C://Users//sam christopher//Desktop//React-CodingPlatform//be-nest040925//src//utils//Wrappers"
+```
+
+```ts
+"C://Users//sam christopher//Desktop//React-CodingPlatform//be-nest040925//src//utils//libs"
+```
+
+---
+
+## Why This Is Required
+
+Docker containers need access to:
+- wrapper files
+- language libraries
+- execution utilities
+
+Incorrect paths may cause:
+- code execution failure
+- missing file errors
+- container runtime issues
  
 # 🚀 Running the Project Locally
  
