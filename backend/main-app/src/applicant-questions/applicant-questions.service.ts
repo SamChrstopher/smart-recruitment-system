@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ApplicantAnswer } from 'src/applicants/entities/applicant-answer.entity';
 import { Applicant } from 'src/evaluation/entities/applicants.entity';
@@ -47,7 +48,6 @@ export class ApplicantQuestionService {
   ) {}
 
   async getAssignedQuestions(applicantId: string, attemptId: string) {
-
     // Get test attempt to check current count
     const testAttempt = await this.attemptRepo.findOne({
       where: { id: attemptId, applicant: { id: applicantId } },
@@ -69,8 +69,6 @@ export class ApplicantQuestionService {
         id: 'ASC',
       },
     });
-
-
 
     return {
       questions: questions.map((q) => ({
@@ -378,6 +376,34 @@ export class ApplicantQuestionService {
     };
   }
 
+  @Cron('*/5 * * * *') // every 5 minutes
+  async autoEvaluateExpiredAttendingTests() {
+    console.log('Checking expired attending tests...');
+
+    const now = new Date();
+
+    const activeAttempts = await this.attemptRepo.find({
+      where: {
+        test_status: 'attending',
+        is_submitted: false,
+      },
+      relations: ['applicant'],
+    });
+
+    for (const attempt of activeAttempts) {
+      const startedAt = new Date(attempt.updated_at);
+
+      const diffInHours =
+        (now.getTime() - startedAt.getTime()) / (1000 * 60 * 60);
+
+      if (diffInHours < 24) continue;
+
+      console.log(`Auto evaluating applicant ${attempt.applicant.id}`);
+
+      await this.evaluateTest(attempt.applicant.id, attempt.id);
+    }
+  }
+
   async assignProblem(applicantId: string, attemptId: string): Promise<any> {
     const applicant = await this.applicantRepo.findOne({
       where: { id: applicantId },
@@ -552,7 +578,7 @@ export class ApplicantQuestionService {
       applicantEmail: testAttempt.applicant?.email || '',
     };
   }
-  
+
   async getAssignedProblemForApplicant(applicantId: string) {
     const problemAssignment = await this.apRepo.findOne({
       where: {
@@ -603,3 +629,4 @@ export class ApplicantQuestionService {
     };
   }
 }
+

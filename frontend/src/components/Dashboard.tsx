@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
-  BarChart3,
   CheckCircle,
   Clock,
   Loader2,
@@ -130,25 +129,68 @@ const Dashboard = () => {
   // Calculate metrics based on ALL candidates (no limits)
   const totalCandidates = candidates.length;
 
+  const currentTime = new Date();
+
+  const is24HoursPassed = (date?: string) => {
+    if (!date) return false;
+
+    const startTime = new Date(date);
+
+    const diffInHours =
+      (currentTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
+
+    return diffInHours >= 24;
+  };
+
   // Selected: MCQ > 20 AND coding submission status is "Passed"
   const selectedCandidates = candidates.filter((candidate: Candidate) => {
-    const mcqScore = candidate.test_attempts?.[0]?.mcq_score || 0;
+    const testAttempt = candidate.test_attempts?.[0];
+
+    if (!testAttempt) return false;
+
+    // Evaluate only after submit OR 24hr timeout during attending
+    const canEvaluate =
+      testAttempt.is_submitted ||
+      (testAttempt.test_status === "attending" &&
+        is24HoursPassed(testAttempt.updated_at));
+
+    if (!canEvaluate) return false;
+
+    const mcqScore = testAttempt.mcq_score || 0;
+
     const hasPassedCoding = candidate.submissions.some(
-      (sub: { status: string }) => sub.status === "Passed",
+      (sub) => sub.status === "Passed",
     );
+
     return mcqScore > 20 && hasPassedCoding;
   });
 
   // Not Selected: MCQ <= 20 OR coding submission status is not "Passed" (or no submissions)
   const notSelectedCandidates = candidates.filter((candidate: Candidate) => {
-    const mcqScore = candidate.test_attempts?.[0]?.mcq_score || 0;
-    const hasPassedCoding = candidate.submissions.some(
-      (sub: { status: string }) => sub.status === "Passed",
-    );
-    return mcqScore <= 20 || !hasPassedCoding;
-  });
+    const testAttempt = candidate.test_attempts?.[0];
 
-  const currentTime = new Date();
+    if (!testAttempt) return false;
+
+    const canEvaluate =
+      testAttempt.is_submitted ||
+      (testAttempt.test_status === "attending" &&
+        is24HoursPassed(testAttempt.updated_at));
+
+    if (!canEvaluate) return false;
+
+    const mcqScore = testAttempt.mcq_score || 0;
+
+    const hasPassedCoding = candidate.submissions.some(
+      (sub) => sub.status === "Passed",
+    );
+
+    // Explicitly exclude selected candidates
+    if (mcqScore > 20 && hasPassedCoding) {
+      return false;
+    }
+
+    return true;
+  });
 
   // Helper function to check if test is expired
   const isTestExpired = (candidate: Candidate) => {
@@ -157,8 +199,14 @@ const Dashboard = () => {
 
     if (!testAttempt || !token) return false;
 
+    // Only pending candidates can become expired
+    if (testAttempt.test_status !== "pending") {
+      return false;
+    }
+
     const expiresAt = new Date(token.expires_at);
-    return expiresAt < currentTime && testAttempt.is_submitted === false;
+
+    return expiresAt < currentTime && !testAttempt.is_submitted;
   };
 
   // Helper function to check if attempts are exceeded
@@ -182,19 +230,18 @@ const Dashboard = () => {
     );
   });
 
-  // in progress candidate 
+  // in progress candidate
   const inProgressCandidates = candidates.filter((candidate: Candidate) => {
     const testAttempt = candidate.test_attempts?.[0];
+
     if (!testAttempt) return false;
 
-    // Test is "attending" and not expired or exceeded
     return (
       testAttempt.test_status === "attending" &&
-      !isAttemptsExceeded(candidate) &&
-      !isTestExpired(candidate)
+      !testAttempt.is_submitted &&
+      !is24HoursPassed(testAttempt.updated_at)
     );
   });
-
 
   // Categorize candidates based on test status with proper logic
   const testStatusCounts = candidates.reduce(
@@ -219,9 +266,16 @@ const Dashboard = () => {
         testAttempt.is_submitted === false
       ) {
         acc.pending = (acc.pending || 0) + 1;
-      } else if (testAttempt.test_status === "attending") {
+      } else if (
+        testAttempt.test_status === "attending" &&
+        !is24HoursPassed(testAttempt.updated_at)
+      ) {
         acc.attending = (acc.attending || 0) + 1;
-      } else if (testAttempt.test_status === "completed") {
+      } else if (
+        testAttempt.test_status === "completed" ||
+        (testAttempt.test_status === "attending" &&
+          is24HoursPassed(testAttempt.updated_at))
+      ) {
         acc.completed = (acc.completed || 0) + 1;
       } else {
         // Fallback for any other status
@@ -232,7 +286,6 @@ const Dashboard = () => {
     },
     {},
   );
-
 
   // Get individual counts
   const attemptsExceededTests = testStatusCounts.attemptsExceeded || 0;
@@ -256,7 +309,7 @@ const Dashboard = () => {
       acc[skill] = (acc[skill] || 0) + 1;
       return acc;
     },
-    {}
+    {},
   );
 
   // Experience level distribution with filter (for charts)
@@ -266,7 +319,7 @@ const Dashboard = () => {
       acc[level] = (acc[level] || 0) + 1;
       return acc;
     },
-    {}
+    {},
   );
 
   // Recent 5 candidates based on test_attempts.updated_at (ONLY for Recent Test Results table)
@@ -283,7 +336,6 @@ const Dashboard = () => {
     })
     .slice(0, 5); // Only limit the Recent Test Results to 5
 
-
   // Chart data preparation
   const skillsChartData: ChartDataItem[] = Object.entries(
     skillsDistribution,
@@ -292,10 +344,19 @@ const Dashboard = () => {
     value: value as number,
   }));
 
+  const experienceOrder = ["Fresher", "Junior", "Mid-Level", "Senior"];
+
   const experienceChartData: ChartDataItem[] = Object.entries(
     experienceDistribution,
-  ).map(([name, value]) => ({ name, value: value as number }));
-
+  )
+    .map(([name, value]) => ({
+      name,
+      value: value as number,
+    }))
+    .sort(
+      (a, b) =>
+        experienceOrder.indexOf(a.name) - experienceOrder.indexOf(b.name),
+    );
 
   const COLORS = [
     "#3B82F6",
@@ -314,7 +375,7 @@ const Dashboard = () => {
     color,
     description,
     linkTo,
-    onClick
+    onClick,
   }: MetricCardProps) => (
     <div className="metric-card" onClick={onClick}>
       {linkTo ? (
@@ -347,7 +408,12 @@ const Dashboard = () => {
     </div>
   );
 
-  const ChartCard = ({ title, children, linkTo, dropdown, onFilterChange }: ChartCardProps) => (
+  const ChartCard = ({
+    title,
+    children,
+    dropdown,
+    onFilterChange,
+  }: ChartCardProps) => (
     <div className="chart-card">
       <div className="chart-header">
         <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
@@ -371,7 +437,7 @@ const Dashboard = () => {
             </select>
           )}
         </div>
-        {linkTo && (
+        {/* {linkTo && (
           <div
             className="view-details-link"
             style={{
@@ -385,7 +451,7 @@ const Dashboard = () => {
             <BarChart3 size={16} />
             View Details
           </div>
-        )}
+        )} */}
       </div>
       <div className="chart-content">{children}</div>
     </div>
@@ -464,7 +530,9 @@ const Dashboard = () => {
             color="#EF4444"
             description="MCQ <= 20 OR Coding Failed/Not Attempted"
             linkTo="/results"
-            onClick={() => openModal("Not Selected Candidates", notSelectedCandidates)}
+            onClick={() =>
+              openModal("Not Selected Candidates", notSelectedCandidates)
+            }
           />
           <MetricCard
             title="Completed Tests"
@@ -478,7 +546,9 @@ const Dashboard = () => {
                 "Completed Tests",
                 candidates.filter(
                   (c: Candidate) =>
-                    c.test_attempts?.[0]?.test_status === "completed",
+                    c.test_attempts?.[0]?.test_status === "completed" ||
+                    (c.test_attempts?.[0]?.test_status === "attending" &&
+                      is24HoursPassed(c.test_attempts?.[0]?.updated_at)),
                 ),
               )
             }
@@ -517,7 +587,7 @@ const Dashboard = () => {
             onClick={() =>
               openModal(
                 "Attempts Exceeded",
-                candidates.filter((c: Candidate) => isAttemptsExceeded(c))
+                candidates.filter((c: Candidate) => isAttemptsExceeded(c)),
               )
             }
           />
@@ -531,7 +601,7 @@ const Dashboard = () => {
             onClick={() =>
               openModal(
                 "Expired Tests",
-                candidates.filter((c: Candidate) => isTestExpired(c))
+                candidates.filter((c: Candidate) => isTestExpired(c)),
               )
             }
           />
@@ -621,8 +691,8 @@ const Dashboard = () => {
                   const codingStatus =
                     candidate.submissions.length > 0
                       ? candidate.submissions.find(
-                        (sub: { status: string }) => sub.status === "Passed"
-                      )
+                          (sub: { status: string }) => sub.status === "Passed",
+                        )
                         ? "Passed"
                         : "Failed"
                       : "Not Attempted";
@@ -631,7 +701,7 @@ const Dashboard = () => {
                   let testStatus =
                     candidate.test_attempts?.[0]?.test_status || "pending";
 
-                  // Check attempts exceeded first 
+                  // Check attempts exceeded first
                   if (isAttemptsExceeded(candidate)) {
                     testStatus = "attempts-exceeded";
                   }
@@ -648,36 +718,39 @@ const Dashboard = () => {
                       </td>
                       <td>
                         <span
-                          className={`score-badge ${mcqScore > 20 ? "score-pass" : "score-fail"
-                            }`}
+                          className={`score-badge ${
+                            mcqScore > 20 ? "score-pass" : "score-fail"
+                          }`}
                         >
                           {mcqScore}/30
                         </span>
                       </td>
                       <td>
                         <span
-                          className={`status-badge ${codingStatus === "Passed"
-                            ? "status-pass"
-                            : codingStatus === "Failed"
-                              ? "status-fail"
-                              : "status-pending"
-                            }`}
+                          className={`status-badge ${
+                            codingStatus === "Passed"
+                              ? "status-pass"
+                              : codingStatus === "Failed"
+                                ? "status-fail"
+                                : "status-pending"
+                          }`}
                         >
                           {codingStatus}
                         </span>
                       </td>
                       <td>
                         <span
-                          className={`status-badge ${testStatus === "completed"
-                            ? "status-complete"
-                            : testStatus === "attending"
-                              ? "status-progress"
-                              : testStatus === "attempts-exceeded"
-                                ? "status-attempts-exceeded"
-                                : testStatus === "expired"
-                                  ? "status-expired"
-                                  : "status-pending"
-                            }`}
+                          className={`status-badge ${
+                            testStatus === "completed"
+                              ? "status-complete"
+                              : testStatus === "attending"
+                                ? "status-progress"
+                                : testStatus === "attempts-exceeded"
+                                  ? "status-attempts-exceeded"
+                                  : testStatus === "expired"
+                                    ? "status-expired"
+                                    : "status-pending"
+                          }`}
                         >
                           {testStatus === "attempts-exceeded"
                             ? "attempts exceeded"

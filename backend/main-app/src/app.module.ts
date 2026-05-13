@@ -19,6 +19,7 @@ import { SkillsModule } from './skills/skills.module';
 import { SubmissionModule } from './submissions/submission.module';
 import { UsersModule } from './users/users.module';
 import { AITestModule } from './ai-test/ai-test.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { AITestModule } from './ai-test/ai-test.module';
       inject: [ConfigService],
       useFactory: getTypeOrmConfig,
     }),
+    ScheduleModule.forRoot(),
     AuthModule,
     UsersModule,
     JobsModule,
